@@ -1,0 +1,38 @@
+:root {
+  /* Palette (BookLoop reference) */
+  --cream: #f7f3e8;
+  --cream-deep: #efe8d6;
+  --paper: #fcfaf3;
+  --forest: #234b3a;
+  --forest-deep: #1a3a2d;
+  --forest-soft: #e3ece5;
+  --sand: #d9c8ad;
+  --sand-soft: #ece3d1;
+  --terracotta: #c87550;
+  --terracotta-deep: #a95d3c;
+  --terracotta-soft: #f6e3d8;
+  --ink: #2b2118;
+  --ink-soft: #4d4034;
+  --muted: #6f6254;
+  --line: #e2d8c1;
+  --line-strong: #cdbf9f;
+  --amber: #b7791f;
+  --amber-soft: #f8ecd0;
+
+  /* Type */
+  --font-body: 'Inter Variable', Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-serif: 'Lora Variable', Lora, Georgia, 'Times New Roman', serif;
+
+  /* Shape and depth */
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 18px;
+  --shadow-sm: 0 1px 2px rgb(43 33 24 / 6%);
+  --shadow: 0 6px 22px rgb(43 33 24 / 8%);
+  --shadow-cover: 0 10px 24px rgb(43 33 24 / 18%), 0 2px 4px rgb(43 33 24 / 12%);
+
+  /* Layout */
+  --container: 1180px;
+  --gutter: clamp(16px, 4vw, 32px);
+  --focus: 0 0 0 3px rgb(35 75 58 / 35%);
+}

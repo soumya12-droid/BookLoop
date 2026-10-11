@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="BookLoop">
+  <rect width="64" height="64" rx="14" fill="#234B3A"/>
+  <path d="M14 20c6-3 12-3 18 1v26c-6-4-12-4-18-1V20zm36 0c-6-3-12-3-18 1v26c6-4 12-4 18-1V20z" fill="none" stroke="#F7F3E8" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M32 21v26" stroke="#D9C8AD" stroke-width="3"/>
+</svg>
