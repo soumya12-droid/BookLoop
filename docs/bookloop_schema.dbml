@@ -1,0 +1,269 @@
+// =============================================================================
+// BookLoop - database schema (DBML)            BCSE302P Database Systems Lab
+// Source of truth: backend/db/migrations/0001..0009 (PostgreSQL on Neon).
+// This file DOCUMENTS the schema; it is not used to create it.
+//
+// DBML cannot express (see the report notes / table Notes below):
+//   * partial unique indexes   (uq_req_one_approved_per_copy, uq_req_one_open_per_member_copy,
+//                               uq_loans_one_active_per_copy, ix_loans_open_due)
+//   * triggers                 (migration 0007: T-A .. T-G)
+//   * views                    (migration 0009)
+//   * CHECK constraints        (kept as text in column / table notes)
+//   * DESC ordering in indexes (ix_req_requester, ix_loans_borrower, ix_loans_lender)
+//   * the citext extension     (column type is written as citext)
+// The infrastructure table schema_migrations (created by the migration runner) is not modelled.
+// =============================================================================
+
+Project bookloop {
+  database_type: 'PostgreSQL'
+  Note: 'BookLoop - peer-to-peer book lending. Titles (books) are separate from physical copies; requests are separate from loans.'
+}
+
+// ----------------------------------------------------------------------------
+// Identity
+// ----------------------------------------------------------------------------
+Table users {
+  id                      uuid         [pk, not null, default: `gen_random_uuid()`]
+  email                   citext       [not null, note: 'Case-insensitive via citext. CHECK: matches ^[^@[:space:]]+@[^@[:space:]]+$']
+  password_hash           text         [not null, note: 'Password hash only; never a plaintext password']
+  display_name            text         [not null, note: 'CHECK: 1 to 80 characters after trimming']
+  role                    text         [not null, default: 'MEMBER', note: 'CHECK: MEMBER or ADMIN']
+  default_pickup_location text         [note: 'Fallback for copies.pickup_location']
+  contact_info            text         [note: 'Optional; shown only to the counterparty of an APPROVED request or active loan']
+  created_at              timestamptz  [not null, default: `now()`]
+  deactivated_at          timestamptz  [note: 'NULL means active. CHECK: NULL or >= created_at']
+
+  indexes {
+    email [unique, name: 'uq_users_email']
+  }
+
+  Note: 'Members and administrators. Never hard-deleted: foreign keys to users are ON DELETE RESTRICT; accounts are deactivated instead.'
+}
+
+// ----------------------------------------------------------------------------
+// Catalogue (title level)
+// ----------------------------------------------------------------------------
+Table books {
+  id               uuid        [pk, not null, default: `gen_random_uuid()`]
+  title            text        [not null, note: 'CHECK: not blank']
+  isbn             text        [note: 'Optional ISBN-13, digits only. UNIQUE (NULLs are distinct). CHECK: ^97[89][0-9]{10}$']
+  edition          text
+  publisher        text
+  publication_year smallint    [note: 'CHECK: NULL or between 1400 and 2100']
+  description      text
+  created_at       timestamptz [not null, default: `now()`]
+
+  indexes {
+    isbn [unique, name: 'uq_books_isbn']
+  }
+
+  Note: 'Title-level bibliographic record. Physical items are rows in copies.'
+}
+
+Table authors {
+  id   uuid [pk, not null, default: `gen_random_uuid()`]
+  name text [not null, note: 'CHECK: not blank']
+
+  indexes {
+    `lower(name)` [unique, name: 'uq_authors_name']
+  }
+}
+
+Table genres {
+  id   uuid [pk, not null, default: `gen_random_uuid()`]
+  name text [not null, note: 'CHECK: not blank']
+
+  indexes {
+    `lower(name)` [unique, name: 'uq_genres_name']
+  }
+}
+
+Table book_authors {
+  book_id      uuid     [not null]
+  author_id    uuid     [not null]
+  author_order smallint [not null, default: 1, note: 'CHECK: >= 1']
+
+  indexes {
+    (book_id, author_id) [pk]
+    (book_id, author_order) [unique, name: 'uq_book_authors_order']
+    author_id [name: 'ix_book_authors_author']
+  }
+
+  Note: 'Junction: books M:N authors. Ordered by author_order.'
+}
+
+Table book_genres {
+  book_id  uuid [not null]
+  genre_id uuid [not null]
+
+  indexes {
+    (book_id, genre_id) [pk]
+    genre_id [name: 'ix_book_genres_genre']
+  }
+
+  Note: 'Junction: books M:N genres.'
+}
+
+// ----------------------------------------------------------------------------
+// Lending
+// ----------------------------------------------------------------------------
+Table copies {
+  id              uuid        [pk, not null, default: `gen_random_uuid()`]
+  book_id         uuid        [not null]
+  owner_id        uuid        [not null]
+  copy_condition  text        [not null, default: 'GOOD', note: 'CHECK: NEW, LIKE_NEW, GOOD, FAIR or POOR']
+  is_listed       boolean     [not null, default: true, note: 'Owner intent only. Availability is derived (view available_copies), never stored']
+  pickup_location text        [note: 'Override; falls back to users.default_pickup_location']
+  notes           text
+  created_at      timestamptz [not null, default: `now()`]
+  updated_at      timestamptz [not null, default: `now()`]
+
+  indexes {
+    (id, owner_id) [unique, name: 'uq_copies_id_owner']
+    book_id [name: 'ix_copies_book']
+    owner_id [name: 'ix_copies_owner']
+  }
+
+  Note: 'One physical copy of a book. uq_copies_id_owner exists as the target of loans.fk_loans_copy_owner. Ownership is immutable (trigger T-E).'
+}
+
+Table borrow_requests {
+  id           uuid        [pk, not null, default: `gen_random_uuid()`]
+  copy_id      uuid        [not null]
+  requester_id uuid        [not null]
+  status       text        [not null, default: 'PENDING', note: 'CHECK: PENDING, APPROVED, REJECTED, CANCELLED or FULFILLED']
+  message      text        [note: 'CHECK: NULL or <= 500 characters']
+  created_at   timestamptz [not null, default: `now()`]
+  decided_at   timestamptz [note: 'Set on approval or rejection; kept afterwards']
+  cancelled_at timestamptz
+  cancelled_by uuid        [note: 'Requester, owner or admin who cancelled']
+
+  indexes {
+    (id, copy_id, requester_id) [unique, name: 'uq_req_match']
+    (requester_id, created_at) [name: 'ix_req_requester']
+    copy_id [name: 'ix_req_copy']
+  }
+
+  Note: '''
+    A request is not a loan. Legal transitions: PENDING -> APPROVED | REJECTED | CANCELLED;
+    APPROVED -> FULFILLED | CANCELLED (trigger T-B).
+    NOT REPRESENTABLE IN DBML (PostgreSQL partial unique indexes):
+      uq_req_one_approved_per_copy      UNIQUE (copy_id) WHERE status = 'APPROVED'
+      uq_req_one_open_per_member_copy   UNIQUE (copy_id, requester_id) WHERE status IN ('PENDING','APPROVED')
+    CHECK ck_req_columns: PENDING => decided_at, cancelled_at, cancelled_by NULL;
+      APPROVED/REJECTED/FULFILLED => decided_at NOT NULL, cancelled_* NULL;
+      CANCELLED => cancelled_at and cancelled_by NOT NULL.
+    CHECK ck_req_time_order: decided_at >= created_at, cancelled_at >= created_at, cancelled_at >= decided_at.
+    uq_req_match exists as the target of loans.fk_loans_request_match.
+  '''
+}
+
+Table loans {
+  id          uuid        [pk, not null, default: `gen_random_uuid()`]
+  request_id  uuid        [not null]
+  copy_id     uuid        [not null, note: 'Deliberate copy of borrow_requests.copy_id; kept consistent by fk_loans_request_match']
+  borrower_id uuid        [not null, note: 'Deliberate copy of borrow_requests.requester_id; kept consistent by fk_loans_request_match']
+  lender_id   uuid        [not null, note: 'Copy owner at handoff; kept consistent by fk_loans_copy_owner']
+  borrowed_at timestamptz [not null, default: `now()`]
+  due_at      timestamptz [not null]
+  returned_at timestamptz [note: 'NULL = still on loan. Write-once (trigger T-D)']
+
+  indexes {
+    request_id [unique, name: 'uq_loans_request']
+    (borrower_id, borrowed_at) [name: 'ix_loans_borrower']
+    (lender_id, borrowed_at) [name: 'ix_loans_lender']
+  }
+
+  Note: '''
+    Actual handoff record; history is never deleted.
+    Each request has 0..1 loans because loans.request_id is UNIQUE (uq_loans_request); the diagram arrow
+    for fk_loans_request_match is many-to-one because the FK itself is composite and has no composite unique.
+    NOT REPRESENTABLE IN DBML (PostgreSQL partial indexes):
+      uq_loans_one_active_per_copy   UNIQUE (copy_id) WHERE returned_at IS NULL
+      ix_loans_open_due              (due_at) WHERE returned_at IS NULL
+    CHECK ck_loans_not_self: borrower_id <> lender_id.
+    CHECK ck_loans_due: due_at > borrowed_at.
+    CHECK ck_loans_returned: returned_at IS NULL OR returned_at >= borrowed_at.
+    Trigger T-C: the request must be APPROVED at insert. Trigger T-D: id, request_id, copy_id,
+    borrower_id, lender_id, borrowed_at, due_at are immutable; returned_at is write-once.
+    Deferred constraint triggers T-G: a loan exists <=> its request is FULFILLED (checked at COMMIT).
+  '''
+}
+
+Table reviews {
+  id         uuid        [pk, not null, default: `gen_random_uuid()`]
+  loan_id    uuid        [not null]
+  rating     smallint    [not null, note: 'CHECK: 1 to 5']
+  comment    text        [note: 'CHECK: NULL or <= 2000 characters']
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    loan_id [unique, name: 'uq_reviews_loan']
+  }
+
+  Note: 'One review per returned loan; the reviewer is the loan borrower (no reviewer column). Returned-loan rule enforced by trigger T-F.'
+}
+
+// ----------------------------------------------------------------------------
+// Relationships (names are the PostgreSQL constraint names; unnamed inline
+// FOREIGN KEYs use PostgreSQL default names, taken from the live catalogue).
+// ----------------------------------------------------------------------------
+
+// Operator key (DBML 10.x). The foreign-key holder is the LEFT table for "> / ?> / >?" forms.
+//   ?>   many -> one, parent optional   : every child row has exactly ONE parent (FK is NOT NULL),
+//                                         a parent row may have ZERO children.     <- all NOT NULL FKs
+//   ?>?  many -> optional one           : FK column is NULLable (child may have no parent).
+//   -?   one  -> optional one           : the referenced row has 0..1 holder rows (holder has a UNIQUE FK).
+// A plain ">" would claim every parent has at least one child (false here: a user may own no copies).
+
+// Catalogue junctions
+Ref book_authors_book_id_fkey: book_authors.book_id ?> books.id [delete: cascade]
+Ref book_authors_author_id_fkey: book_authors.author_id ?> authors.id [delete: restrict]
+Ref book_genres_book_id_fkey: book_genres.book_id ?> books.id [delete: cascade]
+Ref book_genres_genre_id_fkey: book_genres.genre_id ?> genres.id [delete: restrict]
+
+// Copies
+Ref copies_book_id_fkey: copies.book_id ?> books.id [delete: restrict]
+Ref copies_owner_id_fkey: copies.owner_id ?> users.id [delete: restrict]
+
+// Requests
+Ref borrow_requests_copy_id_fkey: borrow_requests.copy_id ?> copies.id [delete: restrict]
+Ref borrow_requests_requester_id_fkey: borrow_requests.requester_id ?> users.id [delete: restrict]
+// cancelled_by is NULLable (only set when status = CANCELLED), so the parent end is optional.
+Ref borrow_requests_cancelled_by_fkey: borrow_requests.cancelled_by ?>? users.id [delete: restrict]
+
+// Loans: composite foreign keys, no ON DELETE clause in the migration (PostgreSQL default NO ACTION).
+// Written as many-to-one with loans as the FK holder. NOT drawn as one-to-one: DBML's "-" demands a
+// composite UNIQUE index on loans(request_id, copy_id, borrower_id), which does not exist in the
+// database (only loans.request_id alone is unique: uq_loans_request, so each request in practice
+// has 0..1 loans). That 0..1 rule is therefore documented in the loans Note, not in the arrow.
+// A loan row must match its request's copy and requester ...
+Ref fk_loans_request_match: loans.(request_id, copy_id, borrower_id) ?> borrow_requests.(id, copy_id, requester_id)
+// ... and its lender must be the copy's owner (this also blocks changing copies.owner_id once a loan exists).
+Ref fk_loans_copy_owner: loans.(copy_id, lender_id) ?> copies.(id, owner_id)
+
+// Reviews: reviews.loan_id is the FK holder (NOT NULL and UNIQUE via uq_reviews_loan), so a loan has
+// 0..1 reviews and a review has exactly one loan. DBML puts the holder on the right of "-".
+Ref reviews_loan_id_fkey: loans.id -? reviews.loan_id [delete: restrict]
+
+// ----------------------------------------------------------------------------
+// Visual grouping (does not affect the schema)
+// ----------------------------------------------------------------------------
+TableGroup identity {
+  users
+}
+
+TableGroup catalogue {
+  books
+  authors
+  genres
+  book_authors
+  book_genres
+}
+
+TableGroup lending {
+  copies
+  borrow_requests
+  loans
+  reviews
+}
