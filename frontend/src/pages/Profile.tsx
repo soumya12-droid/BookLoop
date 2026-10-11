@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import type { User } from '../api/types';
 import { updateProfile } from '../api/endpoints';
 import { useAuth } from '../auth/AuthContext';
 import { TextField } from '../components/Forms';
@@ -9,8 +10,14 @@ import { fieldErrors, friendlyMessage } from '../lib/messages';
 
 export default function Profile() {
   useDocumentTitle('Profile');
-  const { user, setUser, signOut } = useAuth();
-  // The page only renders for a signed-in member, so the form can start from the profile directly.
+  const { user } = useAuth();
+  // The form starts from the profile, so it is rebuilt (never reused) for each account and only
+  // once that account's profile has actually loaded.
+  return user ? <ProfileForm key={user.id} user={user} /> : null;
+}
+
+function ProfileForm({ user }: { user: User }) {
+  const { setUser, signOut } = useAuth();
   const [form, setForm] = useState(() => ({
     displayName: user?.displayName ?? '',
     defaultPickupLocation: user?.defaultPickupLocation ?? '',
@@ -19,8 +26,6 @@ export default function Profile() {
   const [busy, setBusy] = useState(false);
   const [fields, setFields] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
-
-  if (!user) return null;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();

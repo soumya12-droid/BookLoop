@@ -38,7 +38,10 @@ export default function MyLoans() {
   useDocumentTitle('My Loans');
   const [params, setParams] = useSearchParams();
   const tab = params.get('tab') === 'lent' ? 'lent' : 'borrowed';
-  const [offset, setOffset] = useState(0);
+  // The page offset belongs to the tab it was set on, so a tab change (or back button) starts at page 1.
+  const [pos, setPos] = useState({ tab, offset: 0 });
+  const offset = pos.tab === tab ? pos.offset : 0;
+  const setOffset = (o: number) => setPos({ tab, offset: o });
   const [busy, setBusy] = useState<string | null>(null);
   const [reviewing, setReviewing] = useState<string | null>(null);
   const [reviewed, setReviewed] = useState<Set<string>>(new Set());
@@ -79,7 +82,7 @@ export default function MyLoans() {
     }
   };
 
-  const switchTab = (t: 'borrowed' | 'lent') => { setOffset(0); setNotice(null); setParams(t === 'lent' ? { tab: 'lent' } : {}); };
+  const switchTab = (t: 'borrowed' | 'lent') => { setNotice(null); setParams(t === 'lent' ? { tab: 'lent' } : {}); };
 
   const items = list.data?.items ?? [];
   const active = items.filter((l) => !l.returnedAt);

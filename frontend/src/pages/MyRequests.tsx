@@ -33,7 +33,10 @@ export default function MyRequests() {
   useDocumentTitle('My Requests');
   const [params, setParams] = useSearchParams();
   const tab = params.get('tab') === 'incoming' ? 'incoming' : 'mine';
-  const [offset, setOffset] = useState(0);
+  // The page offset belongs to the tab it was set on, so a tab change (or back button) starts at page 1.
+  const [pos, setPos] = useState({ tab, offset: 0 });
+  const offset = pos.tab === tab ? pos.offset : 0;
+  const setOffset = (o: number) => setPos({ tab, offset: o });
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
 
@@ -57,7 +60,7 @@ export default function MyRequests() {
   };
   const act = (r: BorrowRequest, action: RequestAction, ok: string) => run(r, ok, () => actOnRequest(r.id, action));
 
-  const switchTab = (t: 'mine' | 'incoming') => { setOffset(0); setNotice(null); setParams(t === 'incoming' ? { tab: 'incoming' } : {}); };
+  const switchTab = (t: 'mine' | 'incoming') => { setNotice(null); setParams(t === 'incoming' ? { tab: 'incoming' } : {}); };
 
   return (
     <div className="dash">

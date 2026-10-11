@@ -20,6 +20,11 @@ const REVIEWS_PER_PAGE = 5;
 
 export default function BookDetail() {
   const { bookId = '' } = useParams();
+  // Keyed so review page, open dialog and notices never carry over from one book to the next.
+  return <BookDetailView key={bookId} bookId={bookId} />;
+}
+
+function BookDetailView({ bookId }: { bookId: string }) {
   const { user } = useAuth();
   const [reviewOffset, setReviewOffset] = useState(0);
   const [target, setTarget] = useState<Copy | null>(null);

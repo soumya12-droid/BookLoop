@@ -21,7 +21,23 @@ function read(): Stored | null {
   return memory;
 }
 
+// Bumped whenever the stored token changes (sign-in, sign-up, sign-out, expiry). Data fetched under
+// one session is never valid under another, so hooks include this in their request identity.
+let epoch = 0;
+const epochListeners = new Set<() => void>();
+function bumpEpoch(): void {
+  epoch += 1;
+  // Deferred: getToken() can expire a session while a component is rendering.
+  queueMicrotask(() => epochListeners.forEach((l) => l()));
+}
+export const sessionEpoch = (): number => epoch;
+export function subscribeSessionEpoch(listener: () => void): () => void {
+  epochListeners.add(listener);
+  return () => { epochListeners.delete(listener); };
+}
+
 export function saveSession(token: string, expiresInSeconds: number): void {
+  bumpEpoch();
   const s: Stored = { token, expiresAt: Date.now() + Math.max(0, expiresInSeconds - 5) * 1000 };
   memory = s;
   try {
@@ -32,6 +48,7 @@ export function saveSession(token: string, expiresInSeconds: number): void {
 }
 
 export function clearSession(): void {
+  if (read() !== null) bumpEpoch();
   memory = null;
   try {
     globalThis.sessionStorage?.removeItem(KEY);
