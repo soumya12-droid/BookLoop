@@ -1,0 +1,47 @@
+{
+  "name": "bookloop-backend",
+  "private": true,
+  "version": "0.1.0",
+  "description": "BookLoop backend. Phase 1 contains database tooling only (migrations, seed, inspection, DB tests).",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "db:migrate": "node db/migrate.mjs",
+    "db:inspect": "node db/inspect.mjs",
+    "db:seed": "node db/seed.mjs",
+    "db:test": "node --test --test-concurrency=1 db/tests/integrity.test.mjs",
+    "db:reset": "node db/reset.mjs",
+    "typecheck": "tsc -p .",
+    "start": "node src/server.ts",
+    "start:test-branch": "node scripts/start-test-branch.mjs",
+    "db:whoami": "node db/whoami.mjs",
+    "test:guards": "node --test --test-concurrency=1 tests/guards.test.ts",
+    "test:hardening": "node --test --test-concurrency=1 tests/hardening.test.ts",
+    "test:tg": "node --test --test-concurrency=1 tests/tg-commit.test.ts",
+    "test:service": "node --test --test-concurrency=1 tests/lending-service.test.ts",
+    "test:concurrency": "node --test --test-concurrency=1 tests/concurrency.test.ts",
+    "test:api": "node --test --test-concurrency=1 tests/api.test.ts",
+    "test:pooled": "node --test --test-concurrency=1 tests/pooled.test.ts",
+    "test:all": "node --test --test-concurrency=1 tests/guards.test.ts db/tests/integrity.test.mjs tests/tg-commit.test.ts tests/lending-service.test.ts tests/hardening.test.ts tests/api.test.ts tests/pooled.test.ts tests/concurrency.test.ts"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.6",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.1",
+    "helmet": "^8.3.0",
+    "jose": "^6.2.12",
+    "pg": "^8.13.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.5",
+    "@types/pg": "^8.23.1",
+    "typescript": "^7.0.2"
+  }
+}
